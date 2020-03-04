@@ -36,25 +36,27 @@ import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.types.Variance
 import org.jetbrains.org.objectweb.asm.MethodVisitor
 import org.jetbrains.org.objectweb.asm.Opcodes
-import org.jetbrains.org.objectweb.asm.tree.AbstractInsnNode
 import org.jetbrains.org.objectweb.asm.tree.InsnNode
 import org.jetbrains.org.objectweb.asm.tree.MethodNode
 
-internal fun generateStateMachine(
+internal fun MethodNode.acceptWithStateMachine(
     irFunction: IrFunction,
     classCodegen: ClassCodegen,
-    target: MethodNode,
-    element: KtElement,
+    target: MethodVisitor,
     obtainContinuationClassBuilder: () -> ClassBuilder
-): MethodVisitor {
+) {
     val state = classCodegen.state
     val languageVersionSettings = state.languageVersionSettings
     assert(languageVersionSettings.isReleaseCoroutines()) { "Experimental coroutines are unsupported in JVM_IR backend" }
-    return CoroutineTransformerMethodVisitor(
-        target, target.access, target.name, target.desc, target.signature, target.exceptions.toTypedArray(),
+    val element = if (irFunction.isSuspend)
+        irFunction.symbol.descriptor.psiElement ?: classCodegen.irClass.descriptor.psiElement
+    else
+        classCodegen.context.suspendLambdaToOriginalFunctionMap[classCodegen.irClass.attributeOwnerId]!!.symbol.descriptor.psiElement
+    val visitor = CoroutineTransformerMethodVisitor(
+        target, access, name, desc, signature, exceptions.toTypedArray(),
         obtainClassBuilderForCoroutineState = obtainContinuationClassBuilder,
-        reportSuspensionPointInsideMonitor = { reportSuspensionPointInsideMonitor(element, state, it) },
-        lineNumber = CodegenUtil.getLineNumberForElement(element, false) ?: 0,
+        reportSuspensionPointInsideMonitor = { reportSuspensionPointInsideMonitor(element as KtElement, state, it) },
+        lineNumber = element?.let { CodegenUtil.getLineNumberForElement(it, false) } ?: 0,
         sourceFile = classCodegen.irClass.file.name,
         languageVersionSettings = languageVersionSettings,
         shouldPreserveClassInitialization = state.constructorCallNormalizationMode.shouldPreserveClassInitialization,
@@ -68,6 +70,7 @@ internal fun generateStateMachine(
             it.returnType.isUnit() && it.anyOfOverriddenFunctionsReturnsNonUnit()
         }
     )
+    accept(visitor)
 }
 
 private fun IrFunction.anyOfOverriddenFunctionsReturnsNonUnit(): Boolean {
@@ -76,11 +79,15 @@ private fun IrFunction.anyOfOverriddenFunctionsReturnsNonUnit(): Boolean {
     } == true
 }
 
-internal fun IrFunction.suspendForInlineToOriginal(): IrSimpleFunction? =
-    if (this !is IrSimpleFunction) null else parentAsClass.declarations.find {
-        it is IrSimpleFunction && it.attributeOwnerId == attributeOwnerId &&
+internal fun IrFunction.suspendForInlineToOriginal(): IrSimpleFunction? {
+    if (origin != JvmLoweredDeclarationOrigin.FOR_INLINE_STATE_MACHINE_TEMPLATE &&
+        origin != JvmLoweredDeclarationOrigin.FOR_INLINE_STATE_MACHINE_TEMPLATE_CAPTURES_CROSSINLINE
+    ) return null
+    return parentAsClass.declarations.find {
+        it is IrSimpleFunction && it.attributeOwnerId == (this as IrSimpleFunction).attributeOwnerId &&
                 it.name.asString() + FOR_INLINE_SUFFIX == name.asString()
     } as IrSimpleFunction?
+}
 
 internal fun IrFunction.alwaysNeedsContinuation(): Boolean =
     this is IrSimpleFunction && parentAsClass.declarations.any {
@@ -155,6 +162,7 @@ internal fun createFakeContinuation(context: JvmBackendContext): IrExpression = 
 )
 
 fun MethodNode.preprocessSuspendMarkers(method: IrFunction) {
+    if (instructions.first == null) return
     if (method.origin != JvmLoweredDeclarationOrigin.FOR_INLINE_STATE_MACHINE_TEMPLATE_CAPTURES_CROSSINLINE) {
         // Remove the fake continuation constructor, since this method either has a real state machine or is inline.
         // Include one instruction before the start marker (that's the id) and one after the end marker (that's a pop).

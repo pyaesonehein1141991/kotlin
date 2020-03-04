@@ -115,27 +115,22 @@ class IrSourceCompilerForInline(
             } ?: callee
         else
             callee
-        val classCodegen = ClassCodegen.getOrCreate(actualCallee.parentAsClass, codegen.context)
+        val classCodegen = ClassCodegen.getOrCreate(callee.parentAsClass, codegen.context)
         val (node, done) = classCodegen.generateMethodNode(actualCallee)
-
-        val copy = with(node) { MethodNode(Opcodes.API_VERSION, access, name, desc, signature, exceptions.toTypedArray()) }
-        if (done) {
-            node.instructions.resetLabels()
-            node.accept(copy)
-        } else {
+        if (!done) {
             val message = "Call is a part of inline call cycle: ${callElement.render()}"
-            AsmUtil.genThrow(InstructionAdapter(copy), "java/lang/UnsupportedOperationException", message)
-            copy.visitMaxs(3, Type.getArgumentsAndReturnSizes(copy.desc) shr 2)
-            copy.visitEnd()
+            AsmUtil.genThrow(InstructionAdapter(node), "java/lang/UnsupportedOperationException", message)
+            node.visitMaxs(3, Type.getArgumentsAndReturnSizes(node.desc) shr 2)
+            node.visitEnd()
 
-            for ((call, container) in codegen.context.callsBeingInlined.dropWhile { it.second != actualCallee }) {
+            for ((call, container) in codegen.context.callsBeingInlined.dropWhile { it.second != callee }) {
                 val callPsiElement = codegen.context.psiSourceManager.findPsiElement(call, container)
                     ?: codegen.context.psiSourceManager.findPsiElement(container)
                 if (callPsiElement != null)
                     codegen.context.state.diagnostics.report(Errors.INLINE_CALL_CYCLE.on(callPsiElement, call.symbol.descriptor.original))
             }
         }
-        return SMAPAndMethodNode(copy, SMAP(classCodegen.sourceMapper.resultMappings))
+        return SMAPAndMethodNode(node, SMAP(classCodegen.sourceMapper.resultMappings))
     }
 
     override fun hasFinallyBlocks() = data.hasFinallyBlocks()

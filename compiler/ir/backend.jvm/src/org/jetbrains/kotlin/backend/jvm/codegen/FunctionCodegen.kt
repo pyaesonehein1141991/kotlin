@@ -11,6 +11,7 @@ import org.jetbrains.kotlin.backend.common.lower.BOUND_VALUE_PARAMETER
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
 import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
 import org.jetbrains.kotlin.codegen.AsmUtil
+import org.jetbrains.kotlin.codegen.inline.MethodBodyVisitor
 import org.jetbrains.kotlin.codegen.inline.wrapWithMaxLocalCalc
 import org.jetbrains.kotlin.codegen.mangleNameIfNeeded
 import org.jetbrains.kotlin.codegen.state.GenerationState
@@ -42,20 +43,19 @@ class FunctionCodegen(
     val context get() = classCodegen.context
     val state get() = classCodegen.state
     val signature = classCodegen.context.methodSignatureMapper.mapSignatureWithGeneric(irFunction)
-    val flags = calculateMethodFlags(irFunction.isStatic)
     val methodNode = createMethodNodeForInlining()
 
-    fun generate(): MethodNode =
+    fun generate(copyBodyFrom: MethodNode? = null): MethodNode =
         try {
-            doGenerate()
+            doGenerate(copyBodyFrom)
         } catch (e: Throwable) {
             throw RuntimeException("Exception while generating code for:\n${irFunction.dump()}", e)
         }
 
-    private fun doGenerate(): MethodNode {
-        val methodVisitor: MethodVisitor = wrapWithMaxLocalCalc(methodNode)
+    private fun doGenerate(copyBodyFrom: MethodNode?): MethodNode {
+        val methodVisitor = wrapWithMaxLocalCalc(methodNode)
 
-        if (state.generateParametersMetadata && flags.and(Opcodes.ACC_SYNTHETIC) == 0) {
+        if (state.generateParametersMetadata && methodNode.access.and(Opcodes.ACC_SYNTHETIC) == 0) {
             generateParameterNames(irFunction, methodVisitor, signature, state)
         }
 
@@ -82,8 +82,12 @@ class FunctionCodegen(
             }
         }
 
-        if (!state.classBuilderMode.generateBodies || flags.and(Opcodes.ACC_ABSTRACT) != 0 || irFunction.isExternal) {
+        if (!state.classBuilderMode.generateBodies || methodNode.access.and(Opcodes.ACC_ABSTRACT) != 0 || irFunction.isExternal) {
             generateAnnotationDefaultValueIfNeeded(methodVisitor)
+        } else if (copyBodyFrom != null) {
+            copyBodyFrom.instructions.resetLabels()
+            copyBodyFrom.accept(MethodBodyVisitor(methodVisitor))
+            methodVisitor.visitMaxs(-1, -1)
         } else {
             val frameMap = createFrameMapWithReceivers()
             ExpressionCodegen(irFunction, signature, frameMap, InstructionAdapter(methodVisitor), classCodegen, inlinedInto).generate()
@@ -108,55 +112,45 @@ class FunctionCodegen(
             else -> throw IllegalStateException("Default argument stub should be either public or package private: ${ir2string(this)}")
         }
 
-    private fun calculateMethodFlags(isStatic: Boolean): Int {
-        if (irFunction.origin == IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER) {
-            return irFunction.getVisibilityForDefaultArgumentStub() or Opcodes.ACC_SYNTHETIC.let {
-                if (irFunction is IrConstructor) it else it or Opcodes.ACC_STATIC
-            }
+    private fun IrFunction.calculateMethodFlags(): Int {
+        if (origin == IrDeclarationOrigin.FUNCTION_FOR_DEFAULT_PARAMETER) {
+            return getVisibilityForDefaultArgumentStub() or Opcodes.ACC_SYNTHETIC or
+                    (if (this is IrConstructor) 0 else Opcodes.ACC_STATIC)
         }
 
-        val visibility = irFunction.getVisibilityAccessFlag()
-        val staticFlag = if (isStatic) Opcodes.ACC_STATIC else 0
-        val varargFlag = if (irFunction.valueParameters.lastOrNull()?.varargElementType != null) Opcodes.ACC_VARARGS else 0
-        val deprecation = irFunction.deprecationFlags
-        val bridgeFlag = if (
-            irFunction.origin == IrDeclarationOrigin.BRIDGE ||
-            irFunction.origin == IrDeclarationOrigin.BRIDGE_SPECIAL
-        ) Opcodes.ACC_BRIDGE else 0
-        val modalityFlag = when ((irFunction as? IrSimpleFunction)?.modality) {
+        val isVararg = valueParameters.lastOrNull()?.varargElementType != null
+        val isBridge = origin == IrDeclarationOrigin.BRIDGE || origin == IrDeclarationOrigin.BRIDGE_SPECIAL
+        val modalityFlag = when ((this as? IrSimpleFunction)?.modality) {
             Modality.FINAL -> when {
-                irFunction.origin == JvmLoweredDeclarationOrigin.CLASS_STATIC_INITIALIZER -> 0
-                classCodegen.irClass.isInterface && irFunction.body != null -> 0
-                !classCodegen.irClass.isAnnotationClass || irFunction.isStatic -> Opcodes.ACC_FINAL
+                origin == JvmLoweredDeclarationOrigin.CLASS_STATIC_INITIALIZER -> 0
+                parentAsClass.isInterface && body != null -> 0
+                !parentAsClass.isAnnotationClass || isStatic -> Opcodes.ACC_FINAL
                 else -> Opcodes.ACC_ABSTRACT
             }
             Modality.ABSTRACT -> Opcodes.ACC_ABSTRACT
-            else -> if (classCodegen.irClass.isJvmInterface && irFunction.body == null) Opcodes.ACC_ABSTRACT else 0 //TODO transform interface modality on lowering to DefaultImpls
+            else -> if (parentAsClass.isJvmInterface && body == null) Opcodes.ACC_ABSTRACT else 0 //TODO transform interface modality on lowering to DefaultImpls
         }
-        val nativeFlag = if (irFunction.isExternal) Opcodes.ACC_NATIVE else 0
-        val syntheticFlag =
-            if (irFunction.origin.isSynthetic || irFunction.hasAnnotation(JVM_SYNTHETIC_ANNOTATION_FQ_NAME) ||
-                    (irFunction.isSuspend && Visibilities.isPrivate(irFunction.visibility) && !irFunction.isInline) ||
-                    irFunction.isReifiable()
-            ) Opcodes.ACC_SYNTHETIC
-            else 0
-        val strictFpFlag = if (irFunction.hasAnnotation(STRICTFP_ANNOTATION_FQ_NAME)) Opcodes.ACC_STRICT else 0
-        val synchronizedFlag = if (irFunction.hasAnnotation(SYNCHRONIZED_ANNOTATION_FQ_NAME)) Opcodes.ACC_SYNCHRONIZED else 0
+        val isSynthetic = origin.isSynthetic || hasAnnotation(JVM_SYNTHETIC_ANNOTATION_FQ_NAME) ||
+                (isSuspend && Visibilities.isPrivate(visibility) && !isInline) ||
+                isReifiable()
+        val isStrictFp = hasAnnotation(STRICTFP_ANNOTATION_FQ_NAME)
+        val isSynchronized = hasAnnotation(SYNCHRONIZED_ANNOTATION_FQ_NAME)
 
-        return visibility or
+        return getVisibilityAccessFlag() or
                 modalityFlag or
-                staticFlag or
-                varargFlag or
-                deprecation or
-                nativeFlag or
-                bridgeFlag or
-                syntheticFlag or
-                strictFpFlag or
-                synchronizedFlag
+                (if (isStatic) Opcodes.ACC_STATIC else 0) or
+                (if (isVararg) Opcodes.ACC_VARARGS else 0) or
+                deprecationFlags or
+                (if (isExternal) Opcodes.ACC_NATIVE else 0) or
+                (if (isBridge) Opcodes.ACC_BRIDGE else 0) or
+                (if (isSynthetic) Opcodes.ACC_SYNTHETIC else 0) or
+                (if (isStrictFp) Opcodes.ACC_STRICT else 0) or
+                (if (isSynchronized) Opcodes.ACC_SYNCHRONIZED else 0)
     }
 
-    private fun createMethodNodeForInlining(): MethodNode =
-        MethodNode(
+    private fun createMethodNodeForInlining(): MethodNode {
+        val flags = irFunction.calculateMethodFlags()
+        return MethodNode(
             Opcodes.API_VERSION,
             flags,
             signature.asmMethod.name,
@@ -164,6 +158,7 @@ class FunctionCodegen(
             if (flags.and(Opcodes.ACC_SYNTHETIC) != 0) null else signature.genericsSignature,
             getThrownExceptions(irFunction)?.toTypedArray()
         )
+    }
 
     private fun getThrownExceptions(function: IrFunction): List<String>? {
         if (state.languageVersionSettings.supportsFeature(LanguageFeature.DoNotGenerateThrowsForDelegatedKotlinMembers) &&

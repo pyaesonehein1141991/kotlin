@@ -33,6 +33,7 @@ import org.jetbrains.kotlin.load.java.JvmAbi
 import org.jetbrains.kotlin.load.java.JvmAnnotationNames
 import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.resolve.jvm.AsmTypes
 import org.jetbrains.kotlin.resolve.jvm.annotations.JVM_SYNTHETIC_ANNOTATION_FQ_NAME
 import org.jetbrains.kotlin.resolve.jvm.annotations.TRANSIENT_ANNOTATION_FQ_NAME
@@ -371,17 +372,36 @@ class ClassCodegen private constructor(
 
     fun generateMethodNode(method: IrFunction): MaybeUnfinishedMethodNode {
         assert(method.parentAsClass == irClass)
-        generatedInlineMethods[method]?.let { return it }
-        val codegen = FunctionCodegen(method, this)
-        if (!method.isInline) {
-            return MaybeUnfinishedMethodNode(codegen.generate(), true)
+        val result = generatedInlineMethods.getOrPut(method) {
+            val codegen = FunctionCodegen(method, this)
+            // Inline functions can be used several times within the module (see IrSourceCompilerForInline).
+            // Cache the empty node before proceeding in order to handle inline call cycles.
+            generatedInlineMethods[method] = MaybeUnfinishedMethodNode(codegen.methodNode, false)
+            MaybeUnfinishedMethodNode(codegen.generate(), true)
         }
-        // Inline functions can be used several times within the module (see IrSourceCompilerForInline).
-        // Cache the empty node before proceeding in order to handle inline call cycles.
-        generatedInlineMethods[method] = MaybeUnfinishedMethodNode(codegen.methodNode, false)
-        generatedInlineMethods[method] = MaybeUnfinishedMethodNode(codegen.generate(), true)
-        return generatedInlineMethods[method]!!
+        if (result.done && result.node.instructions.first != null && (method.hasContinuation() || method.isInvokeSuspendOfLambda())) {
+            // Generate a state machine within this method. The continuation class for it should be generated
+            // lazily so that if tail call optimization kicks in, the unused class will not be written to the output.
+            val copy = with(result.node) { MethodNode(Opcodes.API_VERSION, access, name, desc, signature, exceptions.toTypedArray()) }
+            val continuationClassCodegen = lazy { getOrCreate(method.continuationClass()!!, context, method) }
+            result.node.instructions.resetLabels()
+            result.node.accept(generateStateMachine(method, this, copy, method.psiElement()) {
+                if (method.isSuspend) continuationClassCodegen.value.visitor else visitor
+            })
+            if (continuationClassCodegen.isInitialized() || method.alwaysNeedsContinuation()) {
+                continuationClassCodegen.value.generate()
+            }
+            return MaybeUnfinishedMethodNode(copy, true)
+        }
+        return result
     }
+
+    private fun IrFunction.psiElement(): KtElement =
+        (if (isSuspend)
+            symbol.descriptor.psiElement ?: parentAsClass.descriptor.psiElement
+        else
+            context.suspendLambdaToOriginalFunctionMap[parentAsClass.attributeOwnerId]!!.symbol.descriptor.psiElement)
+                as KtElement
 
     private fun generateMethod(method: IrFunction) {
         if (method.origin == IrDeclarationOrigin.FAKE_OVERRIDE) {

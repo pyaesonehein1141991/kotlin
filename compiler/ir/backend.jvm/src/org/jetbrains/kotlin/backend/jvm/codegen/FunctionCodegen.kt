@@ -24,7 +24,6 @@ import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.load.java.JavaVisibilities
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.resolve.jvm.annotations.JVM_SYNTHETIC_ANNOTATION_FQ_NAME
 import org.jetbrains.kotlin.resolve.jvm.annotations.STRICTFP_ANNOTATION_FQ_NAME
 import org.jetbrains.kotlin.resolve.jvm.annotations.SYNCHRONIZED_ANNOTATION_FQ_NAME
@@ -54,7 +53,7 @@ class FunctionCodegen(
         }
 
     private fun doGenerate(): MethodNode {
-        var methodVisitor: MethodVisitor = wrapWithMaxLocalCalc(methodNode)
+        val methodVisitor: MethodVisitor = wrapWithMaxLocalCalc(methodNode)
 
         if (state.generateParametersMetadata && flags.and(Opcodes.ACC_SYNTHETIC) == 0) {
             generateParameterNames(irFunction, methodVisitor, signature, state)
@@ -83,38 +82,14 @@ class FunctionCodegen(
             }
         }
 
-        val continuationClassCodegen = lazy { ClassCodegen.getOrCreate(irFunction.continuationClass(), context, irFunction) }
         if (!state.classBuilderMode.generateBodies || flags.and(Opcodes.ACC_ABSTRACT) != 0 || irFunction.isExternal) {
             generateAnnotationDefaultValueIfNeeded(methodVisitor)
         } else {
             val frameMap = createFrameMapWithReceivers()
-            if (irFunction.hasContinuation() || irFunction.isInvokeSuspendOfLambda()) {
-                if (irFunction is IrSimpleFunction && irFunction.parentAsClass.declarations.any {
-                        it is IrSimpleFunction && it.attributeOwnerId == irFunction.attributeOwnerId &&
-                                it.origin == JvmLoweredDeclarationOrigin.FOR_INLINE_STATE_MACHINE_TEMPLATE_CAPTURES_CROSSINLINE
-                    }
-                ) {
-                    // Force generation of fake continuation for inliner.
-                    continuationClassCodegen.value
-                }
-                // This has to be done lazily to avoid generating the class if tail call optimization makes it redundant.
-                val getContinuation = {
-                    if (irFunction.isSuspend)
-                        continuationClassCodegen.value.visitor
-                    else
-                        classCodegen.visitor
-                }
-                methodVisitor = generateStateMachine(
-                    irFunction, classCodegen, methodVisitor, flags, signature, getContinuation, psiElement()
-                )
-            }
             ExpressionCodegen(irFunction, signature, frameMap, InstructionAdapter(methodVisitor), classCodegen, inlinedInto).generate()
             methodVisitor.visitMaxs(-1, -1)
         }
         methodVisitor.visitEnd()
-        if (continuationClassCodegen.isInitialized()) {
-            continuationClassCodegen.value.generate()
-        }
         return methodNode
     }
 
@@ -125,16 +100,6 @@ class FunctionCodegen(
     // The same applies for continuations.
     private fun IrClass.shouldNotGenerateConstructorParameterAnnotations() =
         isAnonymousObject || origin == JvmLoweredDeclarationOrigin.CONTINUATION_CLASS || origin == JvmLoweredDeclarationOrigin.SUSPEND_LAMBDA
-
-    private fun psiElement(): KtElement =
-        (if (irFunction.isSuspend)
-            irFunction.symbol.descriptor.psiElement ?: irFunction.parentAsClass.descriptor.psiElement
-        else
-            context.suspendLambdaToOriginalFunctionMap[irFunction.parentAsClass.attributeOwnerId]!!.symbol.descriptor.psiElement)
-                as KtElement
-
-    private fun IrFunction.continuationClass(): IrClass =
-            (body as IrBlockBody).statements.first { it is IrClass && it.origin == JvmLoweredDeclarationOrigin.CONTINUATION_CLASS } as IrClass
 
     private fun IrFunction.getVisibilityForDefaultArgumentStub(): Int =
         when (visibility) {

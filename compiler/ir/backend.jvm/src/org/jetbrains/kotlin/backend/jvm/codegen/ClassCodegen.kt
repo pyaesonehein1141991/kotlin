@@ -379,7 +379,11 @@ class ClassCodegen private constructor(
             generatedInlineMethods[method] = MaybeUnfinishedMethodNode(codegen.methodNode, false)
             MaybeUnfinishedMethodNode(codegen.generate(), true)
         }
-        if (result.done && result.node.instructions.first != null && (method.hasContinuation() || method.isInvokeSuspendOfLambda())) {
+        if (!result.done || result.node.instructions.first == null) {
+            return result
+        }
+        result.node.preprocessSuspendMarkers(method)
+        if (method.hasContinuation() || method.isInvokeSuspendOfLambda()) {
             // Generate a state machine within this method. The continuation class for it should be generated
             // lazily so that if tail call optimization kicks in, the unused class will not be written to the output.
             val copy = with(result.node) { MethodNode(Opcodes.API_VERSION, access, name, desc, signature, exceptions.toTypedArray()) }

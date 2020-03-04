@@ -108,6 +108,11 @@ public class IrInlineSuspendTestsGenerated extends AbstractIrInlineSuspendTests 
         runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/multipleSuspensionPoints.kt", "kotlin.coroutines");
     }
 
+    @TestMetadata("nonLocalReturn.kt")
+    public void testNonLocalReturn() throws Exception {
+        runTest("compiler/testData/codegen/boxInline/suspend/nonLocalReturn.kt");
+    }
+
     @TestMetadata("nonSuspendCrossinline.kt")
     public void testNonSuspendCrossinline_1_3() throws Exception {
         runTestWithPackageReplacement("compiler/testData/codegen/boxInline/suspend/nonSuspendCrossinline.kt", "kotlin.coroutines");

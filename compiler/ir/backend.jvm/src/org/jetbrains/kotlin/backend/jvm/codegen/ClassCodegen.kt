@@ -54,8 +54,6 @@ class ClassCodegen private constructor(
     val context: JvmBackendContext,
     private val parentFunction: IrFunction? = null
 ) : InnerClassConsumer {
-    private val innerClasses = mutableListOf<IrClass>()
-
     private val parentClassCodegen = (parentFunction?.parentAsClass ?: irClass.parent as? IrClass)?.let { getOrCreate(it, context) }
     private val withinInline: Boolean = parentClassCodegen?.withinInline == true || parentFunction?.isInline == true
 
@@ -120,6 +118,7 @@ class ClassCodegen private constructor(
         }
     }
 
+    private var hasAssertField = irClass.hasAssertionsDisabledField(context)
     private var classInitializer = irClass.functions.singleOrNull { it.name.asString() == "<clinit>" }
     private var generatingClInit = false
     private var generated = false
@@ -168,14 +167,46 @@ class ClassCodegen private constructor(
             visitor.visitSource(shortName, null)
         }
 
-
-        if (irClass.origin != JvmLoweredDeclarationOrigin.CONTINUATION_CLASS) {
-            done()
+        // JVMS7 (4.7.6): a nested class or interface member will have InnerClasses information
+        // for each enclosing class and for each immediate member
+        parentClassCodegen?.let { writeInnerClass(irClass, typeMapper, context, it.visitor) }
+        for (codegen in generateSequence(this) { it.parentClassCodegen }.takeWhile { it.parentClassCodegen != null }) {
+            writeInnerClass(codegen.irClass, typeMapper, context, visitor)
         }
+
+        // JVMS7 (4.7.7): A class must have an EnclosingMethod attribute if and only if
+        // it is a local class or an anonymous class.
+        //
+        // The attribute contains the innermost class that encloses the declaration of
+        // the current class. If the current class is immediately enclosed by a method
+        // or constructor, the name and type of the function is recorded as well.
+        if (parentClassCodegen != null) {
+            val enclosingFunction = context.customEnclosingFunction[irClass.attributeOwnerId] ?: parentFunction
+            if (enclosingFunction != null || irClass.isAnonymousObject) {
+                val method = enclosingFunction?.let(context.methodSignatureMapper::mapAsmMethod)
+                visitor.visitOuterClass(parentClassCodegen.type.internalName, method?.name, method?.descriptor)
+            }
+        }
+
+        if (sourceMapShouldBeWritten) {
+            SourceMapper.flushToClassBuilder(sourceMapper, visitor)
+        }
+
+        jvmSignatureClashDetector.reportErrors(classOrigin)
+
+        visitor.done()
         return reifiedTypeParametersUsages
     }
 
-    private var hasAssertField = irClass.hasAssertionsDisabledField(context)
+    override fun addInnerClassInfoFromAnnotation(innerClass: IrClass) {
+        // It's necessary for proper recovering of classId by plain string JVM descriptor when loading annotations
+        // See FileBasedKotlinClass.convertAnnotationVisitor
+        generateSequence<IrDeclaration>(innerClass) { it.parent as? IrDeclaration }.takeWhile { !it.isTopLevelDeclaration }.forEach {
+            if (it is IrClass) {
+                writeInnerClass(it, typeMapper, context, visitor)
+            }
+        }
+    }
 
     fun generateAssertFieldIfNeeded(): IrExpression? {
         if (hasAssertField)
@@ -277,19 +308,6 @@ class ClassCodegen private constructor(
                 }
             }
         }
-    }
-
-    fun done() {
-        writeInnerClasses()
-        writeOuterClassAndEnclosingMethod()
-
-        if (sourceMapShouldBeWritten) {
-            SourceMapper.flushToClassBuilder(sourceMapper, visitor)
-        }
-
-        jvmSignatureClashDetector.reportErrors(classOrigin)
-
-        visitor.done()
     }
 
     private fun IrFile.loadSourceFilesInfo(): List<File> {
@@ -397,63 +415,6 @@ class ClassCodegen private constructor(
             null -> {
             }
             else -> error("Incorrect metadata source $metadata for:\n${method.dump()}")
-        }
-    }
-
-    private fun writeInnerClasses() {
-        // JVMS7 (4.7.6): a nested class or interface member will have InnerClasses information
-        // for each enclosing class and for each immediate member
-        val classForInnerClassRecord = getClassForInnerClassRecord()
-        if (classForInnerClassRecord != null) {
-            parentClassCodegen?.innerClasses?.add(classForInnerClassRecord)
-
-            var codegen: ClassCodegen? = this
-            while (codegen != null) {
-                val outerClass = codegen.getClassForInnerClassRecord()
-                if (outerClass != null) {
-                    innerClasses.add(outerClass)
-                }
-                codegen = codegen.parentClassCodegen
-            }
-        }
-
-        for (innerClass in innerClasses) {
-            writeInnerClass(innerClass, typeMapper, context, visitor)
-        }
-    }
-
-    private fun getClassForInnerClassRecord(): IrClass? {
-        return if (parentClassCodegen != null) irClass else null
-    }
-
-    // It's necessary for proper recovering of classId by plain string JVM descriptor when loading annotations
-    // See FileBasedKotlinClass.convertAnnotationVisitor
-    override fun addInnerClassInfoFromAnnotation(innerClass: IrClass) {
-        var current: IrDeclaration? = innerClass
-        while (current != null && !current.isTopLevelDeclaration) {
-            if (current is IrClass) {
-                innerClasses.add(current)
-            }
-            current = current.parent as? IrDeclaration
-        }
-    }
-
-    private fun writeOuterClassAndEnclosingMethod() {
-        // JVMS7 (4.7.7): A class must have an EnclosingMethod attribute if and only if
-        // it is a local class or an anonymous class.
-        //
-        // The attribute contains the innermost class that encloses the declaration of
-        // the current class. If the current class is immediately enclosed by a method
-        // or constructor, the name and type of the function is recorded as well.
-        if (parentClassCodegen != null) {
-            val outerClassName = parentClassCodegen.type.internalName
-            val enclosingFunction = context.customEnclosingFunction[irClass.attributeOwnerId] ?: parentFunction
-            if (enclosingFunction != null) {
-                val method = context.methodSignatureMapper.mapAsmMethod(enclosingFunction)
-                visitor.visitOuterClass(outerClassName, method.name, method.descriptor)
-            } else if (irClass.isAnonymousObject) {
-                visitor.visitOuterClass(outerClassName, null, null)
-            }
         }
     }
 }

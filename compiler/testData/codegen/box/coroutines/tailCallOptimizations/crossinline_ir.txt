@@ -210,8 +210,8 @@ public final class CrossinlineKt$fold$$inlined$consumeEach$1 {
     public @org.jetbrains.annotations.Nullable method send(p0: java.lang.Object, @org.jetbrains.annotations.NotNull p1: kotlin.coroutines.Continuation): java.lang.Object
 }
 
-@kotlin.Metadata
 @kotlin.coroutines.jvm.internal.DebugMetadata
+@kotlin.Metadata
 final class CrossinlineKt$fold$1 {
     field L$0: java.lang.Object
     field L$1: java.lang.Object
@@ -254,8 +254,8 @@ public final class CrossinlineKt$range$$inlined$source$1 {
     public @org.jetbrains.annotations.Nullable method consume(@org.jetbrains.annotations.NotNull p0: Sink, @org.jetbrains.annotations.NotNull p1: kotlin.coroutines.Continuation): java.lang.Object
 }
 
-@kotlin.Metadata
 @kotlin.coroutines.jvm.internal.DebugMetadata
+@kotlin.Metadata
 public final class CrossinlineKt$source$1$consume$1 {
     field L$0: java.lang.Object
     field L$1: java.lang.Object

@@ -41,8 +41,8 @@ public final class flow/InnerObjectRetransformationKt$check$$inlined$flowWith$1 
     public @org.jetbrains.annotations.Nullable method collect(@org.jetbrains.annotations.NotNull p0: flow.FlowCollector, @org.jetbrains.annotations.NotNull p1: kotlin.coroutines.Continuation): java.lang.Object
 }
 
-@kotlin.Metadata
 @kotlin.coroutines.jvm.internal.DebugMetadata
+@kotlin.Metadata
 final class flow/InnerObjectRetransformationKt$check$1 {
     field L$0: java.lang.Object
     field label: int

@@ -1,14 +1,14 @@
 FILE: locals.kt
-    public? final? fun withLocals(p: Int): Int {
+    public final? fun withLocals(p: Int): Int {
         local final? class Local : R|kotlin/Any| {
-            public? constructor(pp: Int): R|Local| {
+            public constructor(pp: Int): R|Local| {
                 super<R|kotlin/Any|>()
             }
 
-            public? final? val pp: Int = R|<local>/pp|
-                public? get(): Int
+            public final? val pp: Int = R|<local>/pp|
+                public get(): Int
 
-            public? final? fun diff(): <implicit> {
+            public final? fun diff(): <implicit> {
                 ^diff pp#.minus#(p#)
             }
 
@@ -24,7 +24,7 @@ FILE: locals.kt
                 super<Any>()
             }
 
-            public? final? fun foo(): <implicit> {
+            public final? fun foo(): <implicit> {
                 ^foo hashCode#()
             }
 

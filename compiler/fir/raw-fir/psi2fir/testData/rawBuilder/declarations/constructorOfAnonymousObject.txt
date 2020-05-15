@@ -5,15 +5,15 @@ FILE: constructorOfAnonymousObject.kt
                 super<<implicit>>()
             }
 
-            public? open? override fun getStatus(): <implicit> {
+            public open? override fun getStatus(): <implicit> {
                 ^getStatus ResolutionStatus#.SUCCESS#
             }
 
-            public? open? override fun getCandidateDescriptor(): <implicit> {
+            public open? override fun getCandidateDescriptor(): <implicit> {
                 ^getCandidateDescriptor suspendPropertyDescriptor#
             }
 
-            public? open? override fun getResultingDescriptor(): <implicit> {
+            public open? override fun getResultingDescriptor(): <implicit> {
                 ^getResultingDescriptor suspendPropertyDescriptor#
             }
 

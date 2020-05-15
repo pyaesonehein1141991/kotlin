@@ -1,14 +1,14 @@
 FILE: lambda.kt
-    public? final? data class Tuple : R|kotlin/Any| {
-        public? constructor(x: Int, y: Int): R|Tuple| {
+    public final? data class Tuple : R|kotlin/Any| {
+        public constructor(x: Int, y: Int): R|Tuple| {
             super<R|kotlin/Any|>()
         }
 
-        public? final? val x: Int = R|<local>/x|
-            public? get(): Int
+        public final? val x: Int = R|<local>/x|
+            public get(): Int
 
-        public? final? val y: Int = R|<local>/y|
-            public? get(): Int
+        public final? val y: Int = R|<local>/y|
+            public get(): Int
 
         public final fun component1(): Int
 
@@ -17,10 +17,10 @@ FILE: lambda.kt
         public final fun copy(x: Int = this@R|/Tuple|.R|/Tuple.x|, y: Int = this@R|/Tuple|.R|/Tuple.y|): R|Tuple|
 
     }
-    public? final? inline fun use(f: ( (Tuple) -> Int )): <implicit> {
+    public final? inline fun use(f: ( (Tuple) -> Int )): <implicit> {
         ^use f#(Tuple#(IntegerLiteral(1), IntegerLiteral(2)))
     }
-    public? final? fun foo(): Int {
+    public final? fun foo(): Int {
         lval l1: <implicit> = fun <implicit>.<anonymous>(t: Tuple): <implicit> {
             lval x: <implicit> = t#.x#
             lval y: <implicit> = t#.y#
@@ -44,7 +44,7 @@ FILE: lambda.kt
         }
         )
     }
-    public? final? fun bar(): Int {
+    public final? fun bar(): Int {
         ^bar use#(<L> = lambda@fun <implicit>.<anonymous>(): <implicit> {
             when () {
                 ==(it#.x#, IntegerLiteral(0)) ->  {
@@ -56,7 +56,7 @@ FILE: lambda.kt
         }
         )
     }
-    public? final? fun test(list: List<Int>): R|kotlin/Unit| {
+    public final? fun test(list: List<Int>): R|kotlin/Unit| {
         lval map: <implicit> = mutableMapOf#<Int, String>()
         list#.forEach#(<L> = forEach@fun <implicit>.<anonymous>(): <implicit> {
             +=(map#.getOrPut#(it#, getOrPut@fun <implicit>.<anonymous>(): <implicit> {
@@ -66,13 +66,13 @@ FILE: lambda.kt
         }
         )
     }
-    public? final? val simple: <implicit> = fun <implicit>.<anonymous>(): <implicit> {
+    public final? val simple: <implicit> = fun <implicit>.<anonymous>(): <implicit> {
         ^ Unit
     }
 
-        public? get(): <implicit>
-    public? final? val another: <implicit> = fun <implicit>.<anonymous>(): <implicit> {
+        public get(): <implicit>
+    public final? val another: <implicit> = fun <implicit>.<anonymous>(): <implicit> {
         IntegerLiteral(42)
     }
 
-        public? get(): <implicit>
+        public get(): <implicit>

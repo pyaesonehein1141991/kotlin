@@ -57,11 +57,12 @@ class ClassWrapper(
         return modifiers.isInner()
     }
 
+    // See DescriptorUtils#getDefaultConstructorVisibility in core.descriptors
     fun defaultConstructorVisibility(): Visibility {
         return when {
-            isObject() || isEnum() -> Visibilities.PRIVATE
+            isObject() || isEnum() || isEnumEntry() -> Visibilities.PRIVATE
             isSealed() -> Visibilities.PRIVATE
-            else -> Visibilities.UNKNOWN
+            else -> Visibilities.DEFAULT_VISIBILITY
         }
     }
 }

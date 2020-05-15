@@ -690,8 +690,10 @@ class DeclarationsConverter(
             extractArgumentsFrom(classWrapper.superTypeCallEntry, stubMode)
         }
 
-        val explicitVisibility = if (primaryConstructor != null) modifiers.getVisibility() else null
-        val status = FirDeclarationStatusImpl(explicitVisibility ?: defaultVisibility, Modality.FINAL).apply {
+        val explicitVisibility = if (primaryConstructor != null) modifiers.getVisibilityOrNull() else null
+        val visibility =
+            if (explicitVisibility != null && explicitVisibility != Visibilities.UNKNOWN) explicitVisibility else defaultVisibility
+        val status = FirDeclarationStatusImpl(visibility, Modality.FINAL).apply {
             isExpect = modifiers.hasExpect()
             isActual = modifiers.hasActual()
             isInner = classWrapper.isInner()
@@ -755,8 +757,11 @@ class DeclarationsConverter(
 
         val delegatedSelfTypeRef = classWrapper.delegatedSelfTypeRef
 
-        val explicitVisibility = modifiers.getVisibility()
-        val status = FirDeclarationStatusImpl(explicitVisibility, Modality.FINAL).apply {
+        val defaultVisibility = classWrapper.defaultConstructorVisibility()
+        val explicitVisibility = modifiers.getVisibilityOrNull()
+        val visibility =
+            if (explicitVisibility != null && explicitVisibility != Visibilities.UNKNOWN) explicitVisibility else defaultVisibility
+        val status = FirDeclarationStatusImpl(visibility, Modality.FINAL).apply {
             isExpect = modifiers.hasExpect()
             isActual = modifiers.hasActual()
             isInner = classWrapper.isInner()
@@ -1061,8 +1066,8 @@ class DeclarationsConverter(
             }
         }
 
-        var accessorVisibility = modifiers.getVisibility()
-        if (accessorVisibility == Visibilities.UNKNOWN) {
+        var accessorVisibility = modifiers.getVisibilityOrNull()
+        if (accessorVisibility == null || accessorVisibility == Visibilities.UNKNOWN) {
             accessorVisibility = propertyVisibility
         }
         val sourceElement = getterOrSetter.toFirSourceElement()

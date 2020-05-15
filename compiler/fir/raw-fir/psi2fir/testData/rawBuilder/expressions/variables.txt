@@ -1,5 +1,5 @@
 FILE: variables.kt
-    public? final? fun foo(): R|kotlin/Unit| {
+    public final? fun foo(): R|kotlin/Unit| {
         lval x: <implicit> = IntegerLiteral(1)
         lvar y: <implicit> = x#.plus#(IntegerLiteral(1))
         lval z: <implicit> = y#.times#(IntegerLiteral(2))

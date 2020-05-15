@@ -103,16 +103,21 @@ class RawFirBuilder(
     override val PsiElement?.selectorExpression: PsiElement?
         get() = (this as? KtQualifiedExpression)?.selectorExpression
 
-    private val KtModifierListOwner.visibility: Visibility
+    private val KtModifierListOwner.visibilityOrNull: Visibility?
         get() = with(modifierList) {
             when {
-                this == null -> Visibilities.UNKNOWN
+                // Technically, default visibility is DEFAULT_VISIBILITY (= PUBLIC), but this indicates the absence of visibility modifiers,
+                // and the caller will do the necessary next step, e.g., using property's visibility if an accessor doesn't have visibility.
+                this == null -> null
                 hasModifier(PRIVATE_KEYWORD) -> Visibilities.PRIVATE
                 hasModifier(PUBLIC_KEYWORD) -> Visibilities.PUBLIC
                 hasModifier(PROTECTED_KEYWORD) -> Visibilities.PROTECTED
-                else -> if (hasModifier(INTERNAL_KEYWORD)) Visibilities.INTERNAL else Visibilities.UNKNOWN
+                else -> if (hasModifier(INTERNAL_KEYWORD)) Visibilities.INTERNAL else null
             }
         }
+
+    private val KtModifierListOwner.visibility: Visibility
+        get() = visibilityOrNull ?: Visibilities.DEFAULT_VISIBILITY
 
     private val KtDeclaration.modality: Modality?
         get() = with(modifierList) {
@@ -268,7 +273,8 @@ class RawFirBuilder(
             isGetter: Boolean,
         ): FirPropertyAccessor {
             val accessorVisibility =
-                if (this?.visibility != null && this.visibility != Visibilities.UNKNOWN) this.visibility else property.visibility
+                if (this?.visibilityOrNull != null && this.visibilityOrNull != Visibilities.UNKNOWN) this.visibilityOrNull!!
+                else property.visibility
             if (this == null || !hasBody()) {
                 val propertySource = property.toFirSourceElement()
                 return FirDefaultPropertyAccessor
@@ -526,6 +532,14 @@ class RawFirBuilder(
             return delegatedSuperTypeRef
         }
 
+        // See DescriptorUtils#getDefaultConstructorVisibility in core.descriptors
+        private fun KtConstructor<*>?.defaultVisibility(owner: KtClassOrObject): Visibility =
+            when {
+                owner is KtObjectDeclaration || owner.hasModifier(ENUM_KEYWORD) || owner is KtEnumEntry -> Visibilities.PRIVATE
+                owner.hasModifier(SEALED_KEYWORD) -> Visibilities.PRIVATE
+                else -> Visibilities.DEFAULT_VISIBILITY
+            }
+
         private fun KtPrimaryConstructor?.toFirConstructor(
             superTypeCallEntry: KtSuperTypeCallEntry?,
             delegatedSuperTypeRef: FirTypeRef,
@@ -544,15 +558,11 @@ class RawFirBuilder(
                 }
             }
 
-            fun defaultVisibility() = when {
-                // TODO: object / enum is HIDDEN (?)
-                owner is KtObjectDeclaration || owner.hasModifier(ENUM_KEYWORD) -> Visibilities.PRIVATE
-                owner.hasModifier(SEALED_KEYWORD) -> Visibilities.PRIVATE
-                else -> Visibilities.UNKNOWN
-            }
-
-            val explicitVisibility = this?.visibility
-            val status = FirDeclarationStatusImpl(explicitVisibility ?: defaultVisibility(), Modality.FINAL).apply {
+            val explicitVisibility = this?.visibilityOrNull
+            val visibility =
+                if (explicitVisibility != null && explicitVisibility != Visibilities.UNKNOWN) explicitVisibility
+                else defaultVisibility(owner)
+            val status = FirDeclarationStatusImpl(visibility, Modality.FINAL).apply {
                 isExpect = this@toFirConstructor?.hasExpectModifier() ?: false
                 isActual = this@toFirConstructor?.hasActualModifier() ?: false
                 isInner = owner.hasModifier(INNER_KEYWORD)
@@ -989,8 +999,11 @@ class RawFirBuilder(
                 session = baseSession
                 origin = FirDeclarationOrigin.Source
                 returnTypeRef = delegatedSelfTypeRef
-                val explicitVisibility = visibility
-                status = FirDeclarationStatusImpl(explicitVisibility, Modality.FINAL).apply {
+                val explicitVisibility = visibilityOrNull
+                val visibility =
+                    if (explicitVisibility != null && explicitVisibility != Visibilities.UNKNOWN) explicitVisibility
+                    else defaultVisibility(owner)
+                status = FirDeclarationStatusImpl(visibility, Modality.FINAL).apply {
                     isExpect = hasExpectModifier()
                     isActual = hasActualModifier()
                     isInner = owner.hasModifier(INNER_KEYWORD)

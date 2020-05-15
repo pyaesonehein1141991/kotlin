@@ -45,7 +45,8 @@ interface FirEffectiveVisibility {
         }
 
         override fun lowerBound(other: FirEffectiveVisibility): FirEffectiveVisibility {
-            throw AssertionError("Should not be called")
+            // This default object acts as TOP in the lattice, hence by-passing `other` as a result of `meet`.
+            return other
         }
     }
 }

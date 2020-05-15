@@ -86,14 +86,20 @@ class Modifier(
         return memberModifiers.contains(MemberModifier.LATEINIT)
     }
 
-    fun getVisibility(): Visibility {
+    fun getVisibilityOrNull(): Visibility? {
         return when {
             visibilityModifiers.contains(VisibilityModifier.PRIVATE) -> Visibilities.PRIVATE
             visibilityModifiers.contains(VisibilityModifier.PUBLIC) -> Visibilities.PUBLIC
             visibilityModifiers.contains(VisibilityModifier.PROTECTED) -> Visibilities.PROTECTED
             visibilityModifiers.contains(VisibilityModifier.INTERNAL) -> Visibilities.INTERNAL
-            else -> Visibilities.UNKNOWN
+            // Technically, default visibility is DEFAULT_VISIBILITY (= PUBLIC), but this indicates the absence of visibility modifiers,
+            // and the caller will do the necessary next step, e.g., using property's visibility if an accessor doesn't have visibility.
+            else -> null
         }
+    }
+
+    fun getVisibility(): Visibility {
+        return getVisibilityOrNull() ?: Visibilities.DEFAULT_VISIBILITY
     }
 
     fun hasTailrec(): Boolean {

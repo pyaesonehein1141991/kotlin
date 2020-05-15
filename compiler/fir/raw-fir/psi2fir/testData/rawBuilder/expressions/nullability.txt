@@ -1,5 +1,5 @@
 FILE: nullability.kt
-    public? final? fun orFourtyTwo(arg: Int?): <implicit> {
+    public final? fun orFourtyTwo(arg: Int?): <implicit> {
         ^orFourtyTwo when (lval <elvis>: <implicit> = arg#) {
             ==($subj$, Null(null)) ->  {
                 IntegerLiteral(42)
@@ -10,6 +10,6 @@ FILE: nullability.kt
         }
 
     }
-    public? final? fun bang(arg: Int?): <implicit> {
+    public final? fun bang(arg: Int?): <implicit> {
         ^bang arg#!!
     }

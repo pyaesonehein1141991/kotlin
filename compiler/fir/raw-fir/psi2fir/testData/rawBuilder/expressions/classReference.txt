@@ -1,11 +1,11 @@
 FILE: classReference.kt
-    public? final? class A : R|kotlin/Any| {
-        public? constructor(): R|test/A| {
+    public final? class A : R|kotlin/Any| {
+        public constructor(): R|test/A| {
             super<R|kotlin/Any|>()
         }
 
     }
-    public? final? fun test(): R|kotlin/Unit| {
+    public final? fun test(): R|kotlin/Unit| {
         <getClass>(A#)
         <getClass>(test#.A#)
         <getClass>(A#())

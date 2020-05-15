@@ -29,7 +29,7 @@ fun testWrong4(x: List<Any>) = x is ReadableList
 
 fun <T> testLocal(x: Any) {
     class C
-    typealias CA = C
+    typealias <!EXPOSED_TYPEALIAS_EXPANDED_TYPE!>CA<!> = C
     if (x is C) {}
     if (x is CA) {}
 }

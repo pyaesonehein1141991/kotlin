@@ -79,8 +79,7 @@ private fun Visibility.forVisibility(
         Visibilities.PUBLIC -> Public
         Visibilities.LOCAL -> Local
         // NB: visibility must be already normalized here, so e.g. no JavaVisibilities are possible at this point
-        // TODO: else -> throw AssertionError("Visibility $name is not allowed in forVisibility")
-        else -> Private
+        else -> throw AssertionError("Visibility $name is not allowed in forVisibility")
     }
 
 class DeclarationWithRelation internal constructor(val declaration: FirMemberDeclaration, private val relation: RelationToType) {
